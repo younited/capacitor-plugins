@@ -3,6 +3,7 @@ package com.capacitorjs.plugins.pushnotifications;
 import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
@@ -12,6 +13,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.service.notification.StatusBarNotification;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
@@ -29,6 +32,7 @@ import org.json.JSONObject;
 public class PushNotificationsPlugin extends Plugin {
 
     static final String PUSH_NOTIFICATIONS = "receive";
+    static final String GOVITY_CHANNEL = "govity_android_channel";
 
     public static Bridge staticBridge = null;
     public static RemoteMessage lastMessage = null;
@@ -62,6 +66,13 @@ public class PushNotificationsPlugin extends Plugin {
             for (String key : bundle.keySet()) {
                 if (key.equals("google.message_id")) {
                     notificationJson.put("id", bundle.getString(key));
+                } else if(key.equals("custom")) {
+                    String valueStr = bundle.getString(key);
+                    try {
+                        dataObject.put(key, new JSObject(valueStr));
+                    }
+                    catch(JSONException e) {
+                    }
                 } else {
                     String valueStr = bundle.getString(key);
                     dataObject.put(key, valueStr);
@@ -294,6 +305,55 @@ public class PushNotificationsPlugin extends Plugin {
             if (link != null) {
                 remoteMessageData.put("link", link.toString());
             }
+        } else {
+            String title = remoteMessage.getData().get("title");
+            String body = remoteMessage.getData().get("content");
+            Bundle bundle = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    ApplicationInfo applicationInfo = getContext()
+                        .getPackageManager()
+                        .getApplicationInfo(
+                            getContext().getPackageName(),
+                            PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA));
+                    bundle = applicationInfo.metaData;
+                } catch (PackageManager.NameNotFoundException e) {
+                    e.printStackTrace();
+                }
+            } else {
+                bundle = getBundleLegacy();
+            }
+
+            int pushIcon = android.R.drawable.ic_dialog_info;
+
+            if (bundle != null && bundle.getInt("com.google.firebase.messaging.default_notification_icon") != 0) {
+                pushIcon = bundle.getInt("com.google.firebase.messaging.default_notification_icon");
+            }
+
+            PackageManager pm = getContext().getPackageManager();
+            Intent launchApp = pm.getLaunchIntentForPackage(getContext().getPackageName());
+
+            for (String key : remoteMessage.getData().keySet()) {
+                String value = remoteMessage.getData().get(key);
+                launchApp.putExtra(key, value);
+            }
+            launchApp.setIdentifier(remoteMessage.getMessageId());
+            launchApp.putExtra("google.message_id", remoteMessage.getMessageId());
+
+            PendingIntent launchNotification = PendingIntent.getActivity(getContext(), 0, launchApp, PendingIntent.FLAG_IMMUTABLE);
+
+            Notification newNotification = new NotificationCompat.Builder(getContext(),
+                NotificationChannelManager.FOREGROUND_NOTIFICATION_CHANNEL_ID
+            )
+                .setContentTitle(title)
+                .setContentText(body)
+                .setSmallIcon(pushIcon)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(launchNotification)
+                .setAutoCancel(true)
+                .build();
+            NotificationManagerCompat manager = NotificationManagerCompat.from(getContext());
+            manager.notify(/* notification id */0, newNotification);
         }
 
         notifyListeners("pushNotificationReceived", remoteMessageData, true);
