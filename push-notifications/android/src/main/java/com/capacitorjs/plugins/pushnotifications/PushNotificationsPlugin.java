@@ -2,6 +2,7 @@ package com.capacitorjs.plugins.pushnotifications;
 
 import android.Manifest;
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -32,7 +33,8 @@ import org.json.JSONObject;
 public class PushNotificationsPlugin extends Plugin {
 
     static final String PUSH_NOTIFICATIONS = "receive";
-    static final String GOVITY_CHANNEL = "govity_android_channel";
+    static final String GOVITY_CHANNEL_ID = "govity_android_channel";
+    static final String GOVITY_CHANNEL_NAME = "Govity Notidfication Channel";
 
     public static Bridge staticBridge = null;
     public static RemoteMessage lastMessage = null;
@@ -307,7 +309,7 @@ public class PushNotificationsPlugin extends Plugin {
             }
         } else {
             String title = remoteMessage.getData().get("title");
-            String body = remoteMessage.getData().get("content");
+            String body = remoteMessage.getData().get("alert");
             Bundle bundle = null;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 try {
@@ -330,8 +332,19 @@ public class PushNotificationsPlugin extends Plugin {
                 pushIcon = bundle.getInt("com.google.firebase.messaging.default_notification_icon");
             }
 
+            //Create the channel. Android will automatically check if the channel already exists
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = new NotificationChannel(
+                    GOVITY_CHANNEL_ID, 
+                    GOVITY_CHANNEL_NAME, 
+                    NotificationManager.IMPORTANCE_HIGH);
+                channel.setDescription("Govity Notifications");
+                notificationManager.createNotificationChannel(channel);
+            }
+
             PackageManager pm = getContext().getPackageManager();
             Intent launchApp = pm.getLaunchIntentForPackage(getContext().getPackageName());
+            launchApp.putExtras(remoteMessage.toIntent().getExtras());
 
             for (String key : remoteMessage.getData().keySet()) {
                 String value = remoteMessage.getData().get(key);
@@ -340,7 +353,7 @@ public class PushNotificationsPlugin extends Plugin {
             launchApp.setIdentifier(remoteMessage.getMessageId());
             launchApp.putExtra("google.message_id", remoteMessage.getMessageId());
 
-            PendingIntent launchNotification = PendingIntent.getActivity(getContext(), 0, launchApp, PendingIntent.FLAG_IMMUTABLE);
+            PendingIntent launchNotification = PendingIntent.getActivity(getContext(), generateUniqueId(), launchApp, PendingIntent.FLAG_IMMUTABLE);
 
             Notification newNotification = new NotificationCompat.Builder(getContext(),
                 NotificationChannelManager.FOREGROUND_NOTIFICATION_CHANNEL_ID
@@ -353,10 +366,14 @@ public class PushNotificationsPlugin extends Plugin {
                 .setAutoCancel(true)
                 .build();
             NotificationManagerCompat manager = NotificationManagerCompat.from(getContext());
-            manager.notify(/* notification id */0, newNotification);
+            manager.notify(generateUniqueId(), newNotification);
         }
 
         notifyListeners("pushNotificationReceived", remoteMessageData, true);
+    }
+
+    private int generateUniqueId() {
+        return (int) (System.currentTimeMillis() % Integer.MAX_VALUE);
     }
 
     public static PushNotificationsPlugin getPushNotificationsInstance() {
