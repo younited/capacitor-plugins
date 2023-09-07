@@ -350,7 +350,9 @@ public class PushNotificationsPlugin extends Plugin {
                 String value = remoteMessage.getData().get(key);
                 launchApp.putExtra(key, value);
             }
-            launchApp.setIdentifier(remoteMessage.getMessageId());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                launchApp.setIdentifier(remoteMessage.getMessageId());
+            }
             launchApp.putExtra("google.message_id", remoteMessage.getMessageId());
 
             PendingIntent launchNotification = PendingIntent.getActivity(getContext(), generateUniqueId(), launchApp, PendingIntent.FLAG_IMMUTABLE);
